@@ -40,11 +40,27 @@ export const TopBar = ({ title, subtitle, user: propUser }) => {
     }, 250);
   };
 
-  // Filter notifications by user role (superadmin sees all, deptadmin sees their own department + general)
+  // Filter notifications by user role
   const notifications = useMemo(() => {
     if (!user) return notificationsList;
-    if (user.role === 'superadmin') return notificationsList;
-    return notificationsList.filter(n => !n.department || n.department === user.department || n.department === 'All');
+    if (user.role === 'superadmin') {
+      return notificationsList.filter(n => !n.recipient_role || n.recipient_role === 'superadmin' || n.recipient_user_id === user.id);
+    }
+    if (user.role === 'furniture_admin') {
+      return notificationsList.filter(n =>
+        n.recipient_user_id === user.id ||
+        n.recipient_role === 'furniture_admin' ||
+        (!n.recipient_role && !n.recipient_user_id && n.department === 'All')
+      );
+    }
+    if (user.role === 'dealer') {
+      return notificationsList.filter(n => n.recipient_user_id === user.id);
+    }
+    return notificationsList.filter(n => {
+      if (n.recipient_user_id && n.recipient_user_id !== user.id) return false;
+      if (n.recipient_role && n.recipient_role !== user.role) return false;
+      return !n.department || n.department === user.department || n.department === 'All';
+    });
   }, [notificationsList, user]);
 
   const unreadCount = useMemo(() => {

@@ -23,13 +23,39 @@ export const Users = () => {
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState('Dept Admin');
   const [dept, setDept] = useState('Computer Science');
+  const [vendorId, setVendorId] = useState('');
+  const [vendorsList, setVendorsList] = useState([]);
   const [status, setStatus] = useState('Active');
 
+  const formatRoleLabel = (r) => {
+    const clean = String(r || '').toLowerCase();
+    if (clean === 'superadmin' || clean === 'super admin') return 'Super Admin';
+    if (clean === 'furniture_admin' || clean === 'furniture admin') return 'Furniture Admin';
+    if (clean === 'deptadmin' || clean === 'dept admin') return 'Dept Admin';
+    if (clean === 'auditor') return 'Auditor';
+    if (clean === 'dealer') return 'Dealer';
+    if (clean === 'faculty') return 'Faculty';
+    return r || 'Dept Admin';
+  };
+
+  const toBackendRole = (r) => {
+    if (r === 'Super Admin' || r === 'superadmin') return 'superadmin';
+    if (r === 'Furniture Admin' || r === 'furniture_admin') return 'furniture_admin';
+    if (r === 'Auditor' || r === 'auditor') return 'auditor';
+    if (r === 'Dealer' || r === 'dealer') return 'dealer';
+    if (r === 'Faculty' || r === 'faculty') return 'faculty';
+    return 'deptadmin';
+  };
+
   useEffect(() => {
-    // Load fresh user data from backend API
+    // Load fresh user data and vendors from backend API
     const loadUsers = async () => {
       try {
-        const dbUsers = await api.getUsers();
+        const [dbUsers, dbVendors] = await Promise.all([
+          api.getUsers(),
+          api.getVendors().catch(() => []),
+        ]);
+        if (Array.isArray(dbVendors)) setVendorsList(dbVendors);
         if (Array.isArray(dbUsers) && dbUsers.length > 0) {
           const formatted = dbUsers.map(u => ({
             id: u.id,
@@ -37,8 +63,11 @@ export const Users = () => {
             username: u.username,
             email: u.email || '',
             phone: u.phone || '',
-            role: u.role === 'superadmin' ? 'Super Admin' : (u.role === 'deptadmin' ? 'Dept Admin' : u.role),
-            department: u.department ? mapLegacyDepartment(u.department) : (u.role === 'superadmin' ? 'Not Applicable' : 'Admin Block'),
+            vendor_id: u.vendor_id || '',
+            role: formatRoleLabel(u.role),
+            department: u.role === 'dealer'
+              ? 'External Dealer'
+              : (u.department ? mapLegacyDepartment(u.department) : (u.role === 'superadmin' ? 'Not Applicable' : 'Admin Block')),
             status: 'Active'
           }));
           dispatch(setUsersList(formatted));
@@ -60,6 +89,7 @@ export const Users = () => {
     setPhone('');
     setRole('Dept Admin');
     setDept('Computer Science');
+    setVendorId(vendorsList[0]?.id || '');
     setStatus('Active');
     setShowAdd(true);
     setSuccess(false);
@@ -72,8 +102,9 @@ export const Users = () => {
     setUsername(user.username || '');
     setEmail(user.email || '');
     setPhone(user.phone || '');
-    setRole(user.role === 'superadmin' ? 'Super Admin' : (user.role === 'deptadmin' ? 'Dept Admin' : user.role));
-    setDept(user.department && user.department !== 'Not Applicable' ? user.department : 'Computer Science');
+    setRole(formatRoleLabel(user.role));
+    setDept(user.department && user.department !== 'Not Applicable' && user.department !== 'External Dealer' ? user.department : 'Computer Science');
+    setVendorId(user.vendor_id || vendorsList[0]?.id || '');
     setStatus(user.status || 'Active');
     setShowAdd(true);
     setSuccess(false);
@@ -84,9 +115,10 @@ export const Users = () => {
     e.preventDefault();
     setErrorMsg('');
 
-    const isSuperAdmin = role === 'Super Admin' || role === 'superadmin';
-    const finalDepartment = isSuperAdmin ? null : dept;
-    const finalRole = isSuperAdmin ? 'superadmin' : 'deptadmin';
+    const finalRole = toBackendRole(role);
+    const isSuperAdmin = finalRole === 'superadmin';
+    const isDealer = finalRole === 'dealer';
+    const finalDepartment = isSuperAdmin ? null : isDealer ? 'External Dealer' : (finalRole === 'furniture_admin' || finalRole === 'auditor' ? 'Admin Block' : dept);
 
     // Normalize phone number (digits only for WhatsApp readiness)
     const rawPhoneDigits = phone ? phone.replace(/[^0-9]/g, '') : '';
@@ -105,6 +137,7 @@ export const Users = () => {
       phone: normalizedPhone,
       role: finalRole,
       department: finalDepartment,
+      vendor_id: isDealer ? vendorId : null,
     };
 
     const reduxPayload = {
@@ -113,8 +146,9 @@ export const Users = () => {
       username,
       email,
       phone: normalizedPhone || '',
-      role: isSuperAdmin ? 'Super Admin' : 'Dept Admin',
+      role: formatRoleLabel(finalRole),
       department: isSuperAdmin ? 'Not Applicable' : finalDepartment,
+      vendor_id: isDealer ? vendorId : '',
       status,
     };
 
@@ -168,7 +202,15 @@ export const Users = () => {
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
               {usersList.map(u => {
-                const isSuper = u.role === 'Super Admin' || u.role === 'superadmin';
+                const roleLbl = formatRoleLabel(u.role);
+                const isSuper = roleLbl === 'Super Admin';
+                const badgeCls = isSuper
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/50'
+                  : roleLbl === 'Furniture Admin'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/50'
+                  : roleLbl === 'Dealer'
+                  ? 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50'
+                  : 'bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-950/20 dark:text-violet-400 dark:border-violet-900/50';
                 return (
                   <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition">
                     <td className="px-5 py-4">
@@ -183,12 +225,8 @@ export const Users = () => {
                     <td className="px-5 py-4 text-slate-550 dark:text-slate-400 font-semibold">{u.email || '—'}</td>
                     <td className="px-5 py-4 font-mono text-slate-600 dark:text-slate-300 font-medium">{u.phone || '—'}</td>
                     <td className="px-5 py-4">
-                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition duration-300 ${
-                        isSuper 
-                          ? 'bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/50' 
-                          : 'bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-950/20 dark:text-violet-400 dark:border-violet-900/50'
-                      }`}>
-                        {isSuper ? 'Super Admin' : 'Dept Admin'}
+                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition duration-300 ${badgeCls}`}>
+                        {roleLbl}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-slate-600 dark:text-slate-400 font-semibold">
@@ -236,7 +274,12 @@ export const Users = () => {
                 <Input label="Phone (WhatsApp)" value={phone} onChange={e => setPhone(e.target.value)} placeholder="919876543210" />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Select label="System Role" value={role} onChange={e => setRole(e.target.value)} options={['Dept Admin', 'Super Admin']} />
+                <Select
+                  label="System Role"
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
+                  options={['Dept Admin', 'Furniture Admin', 'Super Admin', 'Auditor', 'Dealer', 'Faculty']}
+                />
                 {role === 'Super Admin' ? (
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Department</label>
@@ -245,6 +288,19 @@ export const Users = () => {
                       value="Not Applicable (Super Admin)" 
                       className="w-full px-3.5 py-2.5 text-xs border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-100 dark:bg-slate-800/50 text-slate-400 cursor-not-allowed font-medium" 
                     />
+                  </div>
+                ) : role === 'Dealer' ? (
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide uppercase">Linked Dealer / Vendor *</label>
+                    <select
+                      value={vendorId}
+                      onChange={e => setVendorId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
+                      required
+                    >
+                      <option value="">Select Dealer</option>
+                      {vendorsList.map(v => <option key={v.id} value={v.id}>{v.name} ({v.id})</option>)}
+                    </select>
                   </div>
                 ) : (
                   <Select label="Department *" value={dept} onChange={e => setDept(e.target.value)} options={ALLOWED_DEPARTMENTS} />

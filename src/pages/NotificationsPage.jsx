@@ -46,6 +46,8 @@ export const NotificationsPage = () => {
     if (!currentUser) return notificationsList;
     const userRole = (currentUser.role || '').toLowerCase().replace(/[\s_-]/g, '');
     const isSuperAdmin = userRole === 'superadmin' || userRole === 'superadministrator';
+    const isFurnitureAdmin = userRole === 'furnitureadmin';
+    const isDealer = userRole === 'dealer';
     const isDeptAdmin = userRole === 'deptadmin' || userRole === 'departmentadmin';
 
     return notificationsList.filter((n) => {
@@ -58,6 +60,16 @@ export const NotificationsPage = () => {
         return false;
       }
 
+      if (isDealer) {
+        return false; // Dealers only see notifications explicitly addressed to their user id
+      }
+
+      if (isFurnitureAdmin) {
+        if (n.recipient_role === 'furniture_admin') return true;
+        if (n.recipient_role && n.recipient_role !== 'furniture_admin') return false;
+        return n.department === 'All';
+      }
+
       // If Super Admin: show superadmin role notifications, and global/all alerts
       if (isSuperAdmin) {
         if (n.recipient_role === 'superadmin') return true;
@@ -67,7 +79,7 @@ export const NotificationsPage = () => {
 
       // If Dept Admin: show deptadmin notifications for their own department only
       if (isDeptAdmin) {
-        if (n.recipient_role === 'superadmin') return false; // Never show superadmin-only alerts
+        if (n.recipient_role && n.recipient_role !== 'deptadmin') return false;
         if (n.department && n.department !== currentUser.department && n.department !== 'All') return false;
         return true;
       }

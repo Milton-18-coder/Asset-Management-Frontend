@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { loginSuccess, DEMO_USERS } from '../store/authSlice';
 import { Icon } from '../components/UIComponents';
+import { api } from '../api';
 
 export const Login = () => {
   const dispatch = useDispatch();
@@ -155,22 +156,29 @@ export const Login = () => {
     setError('Google Sign-In requires a valid VITE_GOOGLE_CLIENT_ID configured in your environment.');
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    setTimeout(() => {
-      const u = DEMO_USERS[username.toLowerCase()];
-      if (u && password === 'password123') {
-        dispatch(loginSuccess({ ...u, remember }));
-      } else {
-        setError('Invalid username or password.');
-        setLoading(false);
-        if (usernameInputRef.current) {
-          usernameInputRef.current.focus();
+    try {
+      const { user, token } = await api.login({ username: username.trim(), password });
+      dispatch(loginSuccess({ ...user, token, remember }));
+    } catch (err) {
+      // Fallback to DEMO_USERS only if backend network is unreachable
+      const msg = String(err.message || '');
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        const u = DEMO_USERS[username.toLowerCase().trim()];
+        if (u && password === 'password123') {
+          dispatch(loginSuccess({ ...u, remember }));
+          return;
         }
       }
-    }, 800);
+      setError(err.message || 'Invalid username or password.');
+      setLoading(false);
+      if (usernameInputRef.current) {
+        usernameInputRef.current.focus();
+      }
+    }
   };
 
   if (forgotMode) {

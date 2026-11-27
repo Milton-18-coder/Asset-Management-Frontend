@@ -170,6 +170,69 @@ export const DEMO_USERS = {
     joinDate: '10 Oct 2017',
     bio: 'Performs periodic physical audits and condition verifications across campus blocks.',
   },
+  furniture_admin: {
+    id: 'USR-014',
+    username: 'furniture_admin',
+    name: 'Mr. Karthik Subramanian',
+    role: 'furniture_admin',
+    department: 'Admin Block',
+    avatar: 'KS',
+    email: 'furniture.admin@nec.edu.in',
+    phone: '+91 98415 67890',
+    office: 'ADM-105 (Central Furniture Estate)',
+    employeeId: 'EMP-FUR-001',
+    designation: 'Central Furniture Procurement & Servicing Administrator',
+    joinDate: '15 Jun 2020',
+    bio: 'Coordinates furniture procurement, dealer quotations, purchase orders, deliveries, and servicing across all departments.',
+  },
+  dealer_ergo: {
+    id: 'USR-015',
+    username: 'dealer_ergo',
+    name: 'Sunita Rao (ErgoDesign)',
+    role: 'dealer',
+    department: 'External Dealer',
+    vendor_id: 'VND-002',
+    vendorName: 'ErgoDesign Workspaces',
+    avatar: 'SR',
+    email: 'support@ergodesign.in',
+    phone: '+91 98111 22334',
+    designation: 'Authorized Furniture Dealer',
+  },
+  dealer_godrej: {
+    id: 'USR-016',
+    username: 'dealer_godrej',
+    name: 'Manoj Pillai (Godrej Interio)',
+    role: 'dealer',
+    department: 'External Dealer',
+    vendor_id: 'VND-004',
+    vendorName: 'Godrej Interio Commercial',
+    avatar: 'MP',
+    email: 'commercial@godrejinterio.com',
+    phone: '+91 98222 33445',
+    designation: 'Authorized Furniture Dealer',
+  },
+  dealer_apex: {
+    id: 'USR-017',
+    username: 'dealer_apex',
+    name: 'Arun Varma (Apex AV)',
+    role: 'dealer',
+    department: 'External Dealer',
+    vendor_id: 'VND-001',
+    vendorName: 'Apex AV Solutions',
+    avatar: 'AV',
+    email: 'sales@apexav.com',
+    phone: '+91 98765 43210',
+    designation: 'Authorized Furniture & AV Dealer',
+  },
+};
+
+const normalizeUserDept = (user) => {
+  if (!user) return user;
+  if (user.role === 'dealer') return { ...user, department: user.department || 'External Dealer' };
+  return {
+    ...user,
+    department: user.department ? mapLegacyDepartment(user.department) : user.department,
+  };
 };
 
 const getStoredUser = () => {
@@ -177,11 +240,7 @@ const getStoredUser = () => {
   const raw = localStorage.getItem('asset_auth_user') || sessionStorage.getItem('asset_auth_user');
   if (!raw) return null;
   try {
-    const user = JSON.parse(raw);
-    if (user && user.department) {
-      user.department = mapLegacyDepartment(user.department);
-    }
-    return user;
+    return normalizeUserDept(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -195,17 +254,18 @@ const authSlice = createSlice({
   },
   reducers: {
     loginSuccess: (state, action) => {
-      const payload = {
-        ...action.payload,
-        department: mapLegacyDepartment(action.payload?.department),
-      };
+      const { token, ...rest } = action.payload || {};
+      const payload = normalizeUserDept(rest);
       state.currentUser = payload;
       state.isAuthenticated = true;
       if (action.payload?.remember) {
         localStorage.setItem('asset_auth_user', JSON.stringify(payload));
+        if (token) localStorage.setItem('asset_auth_token', token);
       } else {
         sessionStorage.setItem('asset_auth_user', JSON.stringify(payload));
+        if (token) sessionStorage.setItem('asset_auth_token', token);
         localStorage.removeItem('asset_auth_user');
+        localStorage.removeItem('asset_auth_token');
       }
     },
     logout: (state) => {
@@ -213,14 +273,13 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       localStorage.removeItem('asset_auth_user');
       sessionStorage.removeItem('asset_auth_user');
+      localStorage.removeItem('asset_auth_token');
+      sessionStorage.removeItem('asset_auth_token');
     },
     updateProfileSuccess: (state, action) => {
       if (state.currentUser) {
-        const payload = {
-          ...action.payload,
-          department: action.payload?.department ? mapLegacyDepartment(action.payload.department) : state.currentUser.department,
-        };
-        state.currentUser = { ...state.currentUser, ...payload };
+        const payload = normalizeUserDept({ ...state.currentUser, ...action.payload });
+        state.currentUser = payload;
         if (localStorage.getItem('asset_auth_user')) {
           localStorage.setItem('asset_auth_user', JSON.stringify(state.currentUser));
         }

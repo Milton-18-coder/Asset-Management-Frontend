@@ -91,9 +91,9 @@ export const FurnitureList = () => {
 
   if (!currentUser) return null;
 
-  // Filter list by role (dept admin only sees their own dept)
+  // Filter list by role (dept admin only sees their own dept; superadmin/furniture_admin/auditor see all)
   const sourceList = useMemo(() => {
-    if (currentUser.role === 'superadmin') return furnitureList;
+    if (['superadmin', 'furniture_admin', 'auditor'].includes(currentUser.role)) return furnitureList;
     return furnitureList.filter(f => f.department === currentUser.department);
   }, [furnitureList, currentUser]);
 

@@ -2,10 +2,76 @@ const API_BASE = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api`
   : '/api';
 
+export function getAuthHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('asset_auth_token') || sessionStorage.getItem('asset_auth_token');
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const rawUser = localStorage.getItem('asset_auth_user') || sessionStorage.getItem('asset_auth_user');
+    if (rawUser) {
+      try {
+        const u = JSON.parse(rawUser);
+        if (u?.id || u?.username) {
+          headers['x-user-id'] = u.id || u.username;
+        }
+      } catch {
+        // ignore invalid json
+      }
+    }
+  }
+  return headers;
+}
+
+async function apiRequest(path, options = {}) {
+  const { headers = {}, ...rest } = options;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...rest,
+    headers: getAuthHeaders({
+      ...(rest.body && !(rest.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+async function apiBlob(path) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to download file');
+  }
+  return res.blob();
+}
+
 export const api = {
+  // Authentication
+  async login(credentials) {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Invalid username or password');
+    }
+    return data;
+  },
+  async getMe() {
+    return apiRequest('/auth/me');
+  },
+
   // Assets
   async getAssets() {
-    const res = await fetch(`${API_BASE}/assets`);
+    const res = await fetch(`${API_BASE}/assets`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error('Failed to fetch assets');
     return res.json();
   },
@@ -121,34 +187,26 @@ export const api = {
 
   // Users
   async getUsers() {
-    const res = await fetch(`${API_BASE}/users`);
+    const res = await fetch(`${API_BASE}/users`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error('Failed to fetch users');
     return res.json();
   },
   async addUser(user) {
-    const res = await fetch(`${API_BASE}/users`, {
+    return apiRequest('/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(user),
     });
-    if (!res.ok) throw new Error('Failed to add user');
-    return res.json();
   },
   async updateUser(id, user) {
-    const res = await fetch(`${API_BASE}/users/${id}`, {
+    return apiRequest(`/users/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(user),
     });
-    if (!res.ok) throw new Error('Failed to update user');
-    return res.json();
   },
   async deleteUser(id) {
-    const res = await fetch(`${API_BASE}/users/${id}`, {
+    return apiRequest(`/users/${id}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error('Failed to delete user');
-    return res.json();
   },
 
   // Notifications
@@ -587,5 +645,205 @@ export const api = {
     const res = await fetch(`${API_BASE}/ai/analytics/summary?${query}`);
     if (!res.ok) throw new Error('Failed to get analytics summary for AI');
     return res.json();
+  },
+
+  // ─── Furniture Admin Procurement & Servicing Module ────────────────────────
+  async getFurnitureDashboard() {
+    return apiRequest('/furniture-reports/dashboard');
+  },
+  async getFurnitureAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/furniture-reports/analytics${query ? `?${query}` : ''}`);
+  },
+  async downloadFurnitureReportPdf(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiBlob(`/furniture-reports/pdf${query ? `?${query}` : ''}`);
+  },
+  async downloadFurnitureReportCsv(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiBlob(`/furniture-reports/csv${query ? `?${query}` : ''}`);
+  },
+
+  // Purchase Requests
+  async getPurchaseRequests(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/purchase-requests${query ? `?${query}` : ''}`);
+  },
+  async getPurchaseRequestById(id) {
+    return apiRequest(`/purchase-requests/${encodeURIComponent(id)}`);
+  },
+  async createPurchaseRequest(payload) {
+    return apiRequest('/purchase-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async updatePurchaseRequestStatus(id, payload) {
+    return apiRequest(`/purchase-requests/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  async respondPurchaseRequestInfo(id, response) {
+    return apiRequest(`/purchase-requests/${encodeURIComponent(id)}/respond-info`, {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    });
+  },
+  async requestDealerQuotations(id, payload) {
+    return apiRequest(`/purchase-requests/${encodeURIComponent(id)}/request-quotations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async recommendQuotation(id, payload) {
+    return apiRequest(`/purchase-requests/${encodeURIComponent(id)}/recommend`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Quotations
+  async getQuotations(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/quotations${query ? `?${query}` : ''}`);
+  },
+  async compareQuotations(purchaseRequestId) {
+    return apiRequest(`/quotations/compare/${encodeURIComponent(purchaseRequestId)}`);
+  },
+  async createQuotation(payload) {
+    return apiRequest('/quotations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async updateQuotation(id, payload) {
+    return apiRequest(`/quotations/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Approvals
+  async getApprovals() {
+    return apiRequest('/approvals');
+  },
+  async submitApprovalDecision(payload) {
+    return apiRequest('/approvals/decision', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Purchase Orders & Deliveries
+  async getPurchaseOrders(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/purchase-orders${query ? `?${query}` : ''}`);
+  },
+  async getPurchaseOrderById(id) {
+    return apiRequest(`/purchase-orders/${encodeURIComponent(id)}`);
+  },
+  async createPurchaseOrder(payload) {
+    return apiRequest('/purchase-orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async updatePurchaseOrderStatus(id, payload) {
+    return apiRequest(`/purchase-orders/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  async verifyPurchaseOrderDelivery(id, payload) {
+    return apiRequest(`/purchase-orders/${encodeURIComponent(id)}/verify-delivery`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async downloadPurchaseOrderPdf(id) {
+    return apiBlob(`/purchase-orders/${encodeURIComponent(id)}/pdf`);
+  },
+
+  // Service Requests
+  async getServiceRequests(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/service-requests${query ? `?${query}` : ''}`);
+  },
+  async getServiceRequestById(id) {
+    return apiRequest(`/service-requests/${encodeURIComponent(id)}`);
+  },
+  async createServiceRequest(payload) {
+    return apiRequest('/service-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async assignServiceDealer(id, payload) {
+    return apiRequest(`/service-requests/${encodeURIComponent(id)}/assign-dealer`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async submitServiceEstimate(id, payload) {
+    return apiRequest(`/service-requests/${encodeURIComponent(id)}/submit-estimate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async forwardServiceForApproval(id, payload) {
+    return apiRequest(`/service-requests/${encodeURIComponent(id)}/forward-approval`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async updateServiceProgress(id, payload) {
+    return apiRequest(`/service-requests/${encodeURIComponent(id)}/progress`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  async verifyServiceCompletion(id, payload) {
+    return apiRequest(`/service-requests/${encodeURIComponent(id)}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Dealers, Assignments, Communications & Dealer Portal
+  async getDealers() {
+    return apiRequest('/dealers');
+  },
+  async getDealerById(id) {
+    return apiRequest(`/dealers/${encodeURIComponent(id)}`);
+  },
+  async addDealer(payload) {
+    return apiRequest('/dealers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async updateDealer(id, payload) {
+    return apiRequest(`/dealers/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+  async getDealerAssignments(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/dealers/assignments/list${query ? `?${query}` : ''}`);
+  },
+  async getDealerCommunications(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return apiRequest(`/dealers/communications/list${query ? `?${query}` : ''}`);
+  },
+  async addDealerCommunication(payload) {
+    return apiRequest('/dealers/communications', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  async getDealerPortalSummary(dealerId = '') {
+    return apiRequest(`/dealers/portal/summary${dealerId ? `?dealerId=${encodeURIComponent(dealerId)}` : ''}`);
   },
 };
